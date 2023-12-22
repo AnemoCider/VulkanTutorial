@@ -1,18 +1,25 @@
+#define VK_USE_PLATFORM_WIN32_KHR
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
 #include <vector>
 #include <cstring>
 #include <optional>
+#include <set>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
+};
+
+const std::vector<const char*> deviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
 // Enable validation layer for error checking in debug mode
@@ -23,7 +30,7 @@ const bool enableValidationLayers = true;
 #endif
 
 
-class HelloTriangleApplication {
+class Application {
 public:
     void run() {
         initWindow();
@@ -40,7 +47,7 @@ private:
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     // logical device
     VkDevice device;
-    // A queue family only stores a part of commands
+    // A queue family only stores a part of commands.
     // The struct stores indices to different queue families that the 
     // physical device supports, and that we need.
     struct QueueFamilyIndices;
@@ -48,6 +55,10 @@ private:
     // the queue itself is automatically created and destroyed with the 
     // logical device, but we need a handle to it.
     VkQueue graphicsQueue;
+    // Abstract type of surface to present rendered images to.
+    VkSurfaceKHR surface;
+    // Handler for the presentation queue
+    VkQueue presentQueue;
 
     void initWindow();
     void initVulkan();
@@ -57,14 +68,15 @@ private:
     bool checkValidationLayerSupport();
     void pickPhysicsDevice();
     bool isDeviceSuitable(VkPhysicalDevice device);
-    // find 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
     void createLogicalDevice();
+    void createSurface();
+    bool checkDeviceExtensionSupport(VkPhysicalDevice device);
 
 };
 
 int main() {
-    HelloTriangleApplication app;
+    Application app;
 
     try {
         app.run();
@@ -79,15 +91,17 @@ int main() {
 
 
 
-struct HelloTriangleApplication::QueueFamilyIndices {
+struct Application::QueueFamilyIndices {
     // optional: evaluate to false until assigned any value
     std::optional<uint32_t> graphicsFamily;
+    std::optional<uint32_t> presentFamily;
+
     bool isComplete() {
-        return graphicsFamily.has_value();
+        return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
 
-void HelloTriangleApplication::initWindow() {
+void Application::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
@@ -97,29 +111,29 @@ void HelloTriangleApplication::initWindow() {
     }
 }
 
-void HelloTriangleApplication::initVulkan() {
+void Application::initVulkan() {
     createInstance();
+    createSurface();
     pickPhysicsDevice();
     createLogicalDevice();
 }
 
-void HelloTriangleApplication::mainLoop() {
+void Application::mainLoop() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
     }
 }
 
-void HelloTriangleApplication::cleanup() {
+void Application::cleanup() {
     vkDestroyDevice(device, nullptr);
-
+    vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
 
     glfwDestroyWindow(window);
-
     glfwTerminate();
 }
 
-void HelloTriangleApplication::createInstance() {
+void Application::createInstance() {
 
     if (enableValidationLayers && !checkValidationLayerSupport()) {
         throw std::runtime_error("validation layers requested, but not available!");
@@ -196,7 +210,7 @@ void HelloTriangleApplication::createInstance() {
 }
 
 // Check if all required validations layers are available
-bool HelloTriangleApplication::checkValidationLayerSupport() {
+bool Application::checkValidationLayerSupport() {
     uint32_t layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
     std::vector<VkLayerProperties> availableLayers(layerCount);
@@ -220,7 +234,7 @@ bool HelloTriangleApplication::checkValidationLayerSupport() {
     return true;
 }
 
-void HelloTriangleApplication::pickPhysicsDevice() {
+void Application::pickPhysicsDevice() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
     if (deviceCount == 0) {
@@ -243,7 +257,7 @@ void HelloTriangleApplication::pickPhysicsDevice() {
     std::cout << "Graphcics card selected: " << deviceProperties.deviceName << '\n';
 }
 
-bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
+bool Application::isDeviceSuitable(VkPhysicalDevice device) {
     /*VkPhysicalDeviceProperties deviceProperties;
     VkPhysicalDeviceFeatures deviceFeatures;
     vkGetPhysicalDeviceProperties(device, &deviceProperties);
@@ -252,11 +266,15 @@ bool HelloTriangleApplication::isDeviceSuitable(VkPhysicalDevice device) {
     return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
         deviceFeatures.geometryShader;*/
     QueueFamilyIndices indices = findQueueFamilies(device);
-    return indices.isComplete();
+    bool extensionsSupported = checkDeviceExtensionSupport(device);
+
+    return indices.isComplete() && extensionsSupported;
 }
 
-HelloTriangleApplication::QueueFamilyIndices
-HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice device) {
+// Find the indices that correspond to the queue families specified in the 
+// QueueFamilyIndices struct
+Application::QueueFamilyIndices
+Application::findQueueFamilies(VkPhysicalDevice device) {
     QueueFamilyIndices indices;
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
@@ -265,39 +283,48 @@ HelloTriangleApplication::findQueueFamilies(VkPhysicalDevice device) {
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
     int i = 0;
     for (const auto& queueFamily : queueFamilies) {
-        if (indices.isComplete()) {
-            break;
-        }
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             indices.graphicsFamily = i;
+        }
+        VkBool32 presentSupport = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+        if (presentSupport) {
+            indices.presentFamily = i;
+        }
+        if (indices.isComplete()) {
+            break;
         }
         i++;
     }
     return indices;
 }
 
-void HelloTriangleApplication::createLogicalDevice() {
+void Application::createLogicalDevice() {
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-    queueCreateInfo.queueCount = 1;
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::set<uint32_t> uniqueQueueFamilies = 
+        { indices.graphicsFamily.value(), indices.presentFamily.value() };
     float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    for (uint32_t queueFamily : uniqueQueueFamilies) {
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex = queueFamily;
+        queueCreateInfo.queueCount = 1;
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfos.push_back(queueCreateInfo);
+    }
     VkPhysicalDeviceFeatures deviceFeatures{};
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.queueCreateInfoCount = 1;
+    createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+    createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     // There is no longer a need to create device specific validation layers 
     // in addition to instance specific ones, but we keep it here.
     // enabledLayerCount and ppEnabledLayerNames will actually be ignored.
-    createInfo.enabledExtensionCount = 0;
-
     if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
@@ -305,8 +332,43 @@ void HelloTriangleApplication::createLogicalDevice() {
         createInfo.enabledLayerCount = 0;
     }
 
+    // Enabling device extensions
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+
     if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
         throw std::runtime_error("failed to create logical device!");
     }
     vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+    vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+}
+
+void Application::createSurface() {
+    //// Here we only implement the surface for windows.
+    //VkWin32SurfaceCreateInfoKHR createInfo{};
+    //createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    //createInfo.hwnd = glfwGetWin32Window(window);
+    //createInfo.hinstance = GetModuleHandle(nullptr);
+    //if (vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface) != VK_SUCCESS) {
+    //    throw std::runtime_error("failed to create window surface!");
+    //}
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create window surface!");
+    }
+}
+
+bool Application::checkDeviceExtensionSupport(VkPhysicalDevice device) {
+    uint32_t extensionCount;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+
+    std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+
+    for (const auto& extension : availableExtensions) {
+        requiredExtensions.erase(extension.extensionName);
+    }
+
+    return requiredExtensions.empty();
 }
