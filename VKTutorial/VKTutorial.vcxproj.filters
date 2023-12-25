@@ -13,10 +13,30 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\Shaders">
+      <UniqueIdentifier>{00e096c5-7d21-4700-af0d-8954363839f0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Tools">
+      <UniqueIdentifier>{0af0997d-463e-4263-9c0b-1c1087833b7e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Tools\Compile">
+      <UniqueIdentifier>{3e77aafe-096c-4a88-901d-de4c82731891}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shader.vert">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="shader.frag">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="CompileShader.bat">
+      <Filter>Tools\Compile</Filter>
+    </None>
   </ItemGroup>
 </Project>
