@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Basic Procedure</title>
+        <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+        
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+        
+    </head>
+    <body class="vscode-body vscode-light">
+        <h1 id="basic-procedure">Basic Procedure</h1>
+<h2 id="presentation">Presentation</h2>
+<ul>
+<li>Window: where images will finally be presented to</li>
+<li>Surface: the abstracted target that vulkan presents image to</li>
+<li>Swap chain: where the images to be presented are stored</li>
+<li>Image view: where an image is accessed</li>
+</ul>
+<details>
+  <summary>Windows</summary>
+<h3 id="window">Window</h3>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::initWindow</span><span class="hljs-params">()</span> </span>{
+    <span class="hljs-built_in">glfwInit</span>();
+    <span class="hljs-built_in">glfwWindowHint</span>(GLFW_CLIENT_API, GLFW_NO_API);
+
+    window = <span class="hljs-built_in">glfwCreateWindow</span>(WIDTH, HEIGHT, <span class="hljs-string">&quot;Vulkan&quot;</span>, <span class="hljs-literal">nullptr</span>, <span class="hljs-literal">nullptr</span>);
+    <span class="hljs-comment">// Get the pointer to the window ovject, so that later we can </span>
+    <span class="hljs-comment">// connect it with the surface</span>
+    <span class="hljs-built_in">glfwSetWindowUserPointer</span>(window, <span class="hljs-keyword">this</span>);
+    <span class="hljs-built_in">glfwSetFramebufferSizeCallback</span>(window, framebufferResizeCallback);
+    <span class="hljs-keyword">if</span> (!window) {
+        std::cout &lt;&lt; <span class="hljs-string">&quot;Creating glfw window error!\n&quot;</span>;
+    }
+}
+</code></pre>
+</details>
+<details>
+  <summary>Surface</summary>
+<h3 id="surface">Surface</h3>
+<p>Requires: <a href="#window">window</a></p>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createSurface</span><span class="hljs-params">()</span> </span>{
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">glfwCreateWindowSurface</span>(instance, window, <span class="hljs-literal">nullptr</span>, &amp;surface) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create window surface!&quot;</span>);
+    }
+}
+</code></pre>
+</details>
+<details>
+  <summary>Swap Chain</summary>
+<h3 id="swap-chain">Swap Chain</h3>
+<h4 id="check-swap-chain-support">Check Swap Chain Support</h4>
+<ol>
+<li>The physical device must support swap chain, which is a device extension.</li>
+<li>The surface must be compatible with the swap chain. We need to check:</li>
+</ol>
+<pre><code class="language-Cpp"><span class="hljs-keyword">struct</span> <span class="hljs-title class_">SwapChainSupportDetails</span> {
+    VkSurfaceCapabilitiesKHR capabilities;
+    std::vector&lt;VkSurfaceFormatKHR&gt; formats;
+    std::vector&lt;VkPresentModeKHR&gt; presentModes;
+};
+
+<span class="hljs-function">Application::SwapChainSupportDetails <span class="hljs-title">Application::querySwapChainSupport</span><span class="hljs-params">(VkPhysicalDevice device)</span> </span>{
+    SwapChainSupportDetails details;
+    <span class="hljs-built_in">vkGetPhysicalDeviceSurfaceCapabilitiesKHR</span>(device, surface, &amp;details.capabilities);
+
+    <span class="hljs-type">uint32_t</span> formatCount;
+    <span class="hljs-built_in">vkGetPhysicalDeviceSurfaceFormatsKHR</span>(device, surface, &amp;formatCount, <span class="hljs-literal">nullptr</span>);
+    <span class="hljs-keyword">if</span> (formatCount != <span class="hljs-number">0</span>) {
+        details.formats.<span class="hljs-built_in">resize</span>(formatCount);
+        <span class="hljs-built_in">vkGetPhysicalDeviceSurfaceFormatsKHR</span>(device, surface, &amp;formatCount, details.formats.<span class="hljs-built_in">data</span>());
+    }
+
+    <span class="hljs-type">uint32_t</span> presentModeCount;
+    <span class="hljs-built_in">vkGetPhysicalDeviceSurfacePresentModesKHR</span>(device, surface, &amp;presentModeCount, <span class="hljs-literal">nullptr</span>);
+
+    <span class="hljs-keyword">if</span> (presentModeCount != <span class="hljs-number">0</span>) {
+        details.presentModes.<span class="hljs-built_in">resize</span>(presentModeCount);
+        <span class="hljs-built_in">vkGetPhysicalDeviceSurfacePresentModesKHR</span>(device, surface, &amp;presentModeCount, details.presentModes.<span class="hljs-built_in">data</span>());
+    }
+
+    <span class="hljs-keyword">return</span> details;
+}
+
+<span class="hljs-type">bool</span> swapChainAdequate = !swapChainSupport.formats.<span class="hljs-built_in">empty</span>() &amp;&amp; !swapChainSupport.presentModes.<span class="hljs-built_in">empty</span>();
+
+</code></pre>
+<h4 id="create-swap-chain">Create Swap Chain</h4>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createSwapChain</span><span class="hljs-params">()</span> </span>{
+    SwapChainSupportDetails swapChainSupport = <span class="hljs-built_in">querySwapChainSupport</span>(physicalDevice);
+
+    VkSurfaceFormatKHR surfaceFormat = <span class="hljs-built_in">chooseSwapSurfaceFormat</span>(swapChainSupport.formats);
+    <span class="hljs-comment">// prefer VK_PRESENT_MODE_MAILBOX_KHR; fallback to VK_PRESENT_MODE_FIFO_KHR.</span>
+    VkPresentModeKHR presentMode = <span class="hljs-built_in">chooseSwapPresentMode</span>(swapChainSupport.presentModes);
+    VkExtent2D extent = <span class="hljs-built_in">chooseSwapExtent</span>(swapChainSupport.capabilities);
+    <span class="hljs-comment">// Select proper number of images in the swap chain.</span>
+    <span class="hljs-comment">// One extra to avoid having to wait for the graphics hardware to </span>
+    <span class="hljs-comment">// finish processing an image before it can start rendering the next one.</span>
+    <span class="hljs-comment">// Example: triple buffering rather than double</span>
+    <span class="hljs-type">uint32_t</span> imageCount = swapChainSupport.capabilities.minImageCount + <span class="hljs-number">1</span>;
+    <span class="hljs-comment">// 0 means no maximum.</span>
+    <span class="hljs-keyword">if</span> (swapChainSupport.capabilities.maxImageCount &gt; <span class="hljs-number">0</span> &amp;&amp; imageCount &gt; swapChainSupport.capabilities.maxImageCount) {
+        imageCount = swapChainSupport.capabilities.maxImageCount;
+    }
+
+    VkSwapchainCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.surface = surface;
+    createInfo.minImageCount = imageCount;
+    createInfo.imageFormat = surfaceFormat.format;
+    createInfo.imageColorSpace = surfaceFormat.colorSpace;
+    createInfo.imageExtent = extent;
+    createInfo.imageArrayLayers = <span class="hljs-number">1</span>;
+    <span class="hljs-comment">// VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT: used as color attachment</span>
+    <span class="hljs-comment">// VK_IMAGE_USAGE_TRANSFER_DST_BIT: rendered image will be transferred to swap chain</span>
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    QueueFamilyIndices indices = <span class="hljs-built_in">findQueueFamilies</span>(physicalDevice);
+    <span class="hljs-type">uint32_t</span> queueFamilyIndices[] = { indices.graphicsFamily.<span class="hljs-built_in">value</span>(), indices.presentFamily.<span class="hljs-built_in">value</span>() };
+    <span class="hljs-comment">// Whether swap chain images are shared between different families matters.</span>
+    <span class="hljs-keyword">if</span> (indices.graphicsFamily != indices.presentFamily) {
+        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        <span class="hljs-comment">// specify which queue families will share the ownership</span>
+        createInfo.queueFamilyIndexCount = <span class="hljs-number">2</span>;
+        createInfo.pQueueFamilyIndices = queueFamilyIndices;
+    } <span class="hljs-keyword">else</span> {
+        createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        createInfo.queueFamilyIndexCount = <span class="hljs-number">0</span>; <span class="hljs-comment">// Optional</span>
+        createInfo.pQueueFamilyIndices = <span class="hljs-literal">nullptr</span>; <span class="hljs-comment">// Optional</span>
+    }
+    <span class="hljs-comment">// Transform: e.g., rotation or flip. current means don&#x27;t want any.</span>
+    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+    <span class="hljs-comment">// Ignore alpha channel, which is used for, e.g., blending of windows.</span>
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    createInfo.presentMode = presentMode;
+    <span class="hljs-comment">// Don&#x27;t care about pixels that are obscured, e.g., by another window over it.</span>
+    createInfo.clipped = VK_TRUE;
+    <span class="hljs-comment">// Will be useful if we want to recreate a new swap chain and discard the old one</span>
+    createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreateSwapchainKHR</span>(device, &amp;createInfo, <span class="hljs-literal">nullptr</span>, &amp;swapChain) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create swap chain!&quot;</span>);
+    }
+
+    <span class="hljs-built_in">vkGetSwapchainImagesKHR</span>(device, swapChain, &amp;imageCount, <span class="hljs-literal">nullptr</span>);
+    <span class="hljs-comment">// We only specified the min count, so more may have been created</span>
+    swapChainImages.<span class="hljs-built_in">resize</span>(imageCount);
+    <span class="hljs-built_in">vkGetSwapchainImagesKHR</span>(device, swapChain, &amp;imageCount, swapChainImages.<span class="hljs-built_in">data</span>());
+    <span class="hljs-comment">// Retrieve properties for future settings, e.g., for image views and attachments</span>
+    swapChainImageFormat = surfaceFormat.format;
+    swapChainExtent = extent;
+}
+</code></pre>
+</details>
+<details>
+  <summary>Image View</summary>
+<h3 id="image-view">Image View</h3>
+<p>Every VkImage should be accessed through an VkImageView:</p>
+<pre><code class="language-Cpp"><span class="hljs-comment">// Color attachment is the view of the swapchain image</span>
+attachments[<span class="hljs-number">0</span>] = swapChain.buffers[i].view; 
+<span class="hljs-comment">// Depth/Stencil attachment is the same for all frame buffers,</span>
+<span class="hljs-comment">// for we only need them temporarily, and just rewrite it  </span>
+<span class="hljs-comment">// when rendering a new frame</span>
+attachments[<span class="hljs-number">1</span>] = depthStencil.view;         
+</code></pre>
+<p>We may need multiple image views referencing one image in a stereographic 3D application, where an image has multiple layers. Here we only use one image view per image.</p>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createImageViews</span><span class="hljs-params">()</span> </span>{
+    swapChainImageViews.<span class="hljs-built_in">resize</span>(swapChainImages.<span class="hljs-built_in">size</span>());
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; swapChainImages.<span class="hljs-built_in">size</span>(); i++) {
+        VkImageViewCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        createInfo.image = swapChainImages[i];
+        <span class="hljs-comment">// 1/2/3D textures, or cube maps</span>
+        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        createInfo.format = swapChainImageFormat;
+        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        <span class="hljs-comment">// Not using mipmap</span>
+        createInfo.subresourceRange.baseMipLevel = <span class="hljs-number">0</span>;
+        createInfo.subresourceRange.levelCount = <span class="hljs-number">1</span>;
+        <span class="hljs-comment">// Not using multiple layers</span>
+        createInfo.subresourceRange.baseArrayLayer = <span class="hljs-number">0</span>;
+        createInfo.subresourceRange.layerCount = <span class="hljs-number">1</span>;
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreateImageView</span>(device, &amp;createInfo, <span class="hljs-literal">nullptr</span>, &amp;swapChainImageViews[i]) != VK_SUCCESS) {
+            <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create image views!&quot;</span>);
+        }
+    }
+}
+</code></pre>
+</details>
+<h2 id="rendering">Rendering</h2>
+<ul>
+<li>Attachment: intermidiate objects used when rendering, i.e., buffer (e.g., color/depth buffer). Essentially image (view).</li>
+<li>Render pass: A series of subpasses, and what attachments they will use.</li>
+<li>Framebuffer: Wrapper of attachments specified during render pass creation. It connects attachments with image views.</li>
+<li>Subpass: wrapper of references to attachments. It defines how attachments are used by the graphics pipeline.</li>
+<li>Pipeline: All operations in a graphics pipeline.</li>
+</ul>
+<details>
+  <summary>Render Pass</summary>
+<h3 id="render-pass">Render Pass</h3>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createRenderPass</span><span class="hljs-params">()</span> </span>{
+    <span class="hljs-comment">// Information about using attachment(s)</span>
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = swapChainImageFormat;
+    <span class="hljs-comment">// Related to multisampling</span>
+    <span class="hljs-comment">// If not doing multisampling, set to count 1 bit</span>
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    <span class="hljs-comment">// Set the values in the attachment to const at the start of rendering</span>
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    <span class="hljs-comment">// Store the contents upon completing the current render pass</span>
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    <span class="hljs-comment">// Not using the stencil buffer</span>
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    <span class="hljs-comment">// Don&#x27;t care the previous layout, we will clear it anyway</span>
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    <span class="hljs-comment">// Layout of pixels that the attachment will transition to</span>
+    <span class="hljs-comment">// We want it to be ready for presentation</span>
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = <span class="hljs-number">0</span>;
+    <span class="hljs-comment">// used as a color buffer</span>
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    <span class="hljs-comment">// this is a graphics subpass (not, e.g., a compute subpass)</span>
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = <span class="hljs-number">1</span>;
+    <span class="hljs-comment">// IMPORTANT!!!</span>
+    <span class="hljs-comment">// fragment shader output refers to this array</span>
+    <span class="hljs-comment">// e.g., layout(location = 0) out vec4 outColor </span>
+    <span class="hljs-comment">// refers to index 0 of color attachments.</span>
+    subpass.pColorAttachments = &amp;colorAttachmentRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = <span class="hljs-number">0</span>;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = <span class="hljs-number">0</span>;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = <span class="hljs-number">1</span>;
+    renderPassInfo.pAttachments = &amp;colorAttachment;
+    renderPassInfo.subpassCount = <span class="hljs-number">1</span>;
+    renderPassInfo.pSubpasses = &amp;subpass;
+
+    renderPassInfo.dependencyCount = <span class="hljs-number">1</span>;
+    renderPassInfo.pDependencies = &amp;dependency;
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreateRenderPass</span>(device, &amp;renderPassInfo, <span class="hljs-literal">nullptr</span>, &amp;renderPass) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create render pass!&quot;</span>);
+    }
+}
+</code></pre>
+</details>
+<details>
+  <summary>Framebuffer</summary>
+<h3 id="framebuffer">Framebuffer</h3>
+<p>Creation:</p>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createFramebuffers</span><span class="hljs-params">()</span> </span>{
+    swapChainFramebuffers.<span class="hljs-built_in">resize</span>(swapChainImageViews.<span class="hljs-built_in">size</span>());
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; swapChainImageViews.<span class="hljs-built_in">size</span>(); i++) {
+        <span class="hljs-comment">// referencing image views that represent the attachments</span>
+        VkImageView attachments[] = {
+            swapChainImageViews[i]
+        };
+
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.attachmentCount = <span class="hljs-number">1</span>;
+        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.width = swapChainExtent.width;
+        framebufferInfo.height = swapChainExtent.height;
+        framebufferInfo.layers = <span class="hljs-number">1</span>;
+
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreateFramebuffer</span>(device, &amp;framebufferInfo, <span class="hljs-literal">nullptr</span>, &amp;swapChainFramebuffers[i]) != VK_SUCCESS) {
+            <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create framebuffer!&quot;</span>);
+        }
+    }
+}
+</code></pre>
+<p>Usage:</p>
+<p>See <a href="#command-buffer">Command Buffer Creation</a></p>
+</details>
+<details>
+    <Summary>Graphics Pipeline</Summary>
+<h3 id="graphics-pipeline">Graphics Pipeline</h3>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createGraphicsPipeline</span><span class="hljs-params">()</span> </span>{
+
+    <span class="hljs-comment">// Shaders</span>
+    <span class="hljs-keyword">auto</span> vertShaderCode = <span class="hljs-built_in">readFile</span>(<span class="hljs-string">&quot;shaders/vert.spv&quot;</span>);
+    <span class="hljs-keyword">auto</span> fragShaderCode = <span class="hljs-built_in">readFile</span>(<span class="hljs-string">&quot;shaders/frag.spv&quot;</span>);
+    VkShaderModule vertShaderModule = <span class="hljs-built_in">createShaderModule</span>(vertShaderCode);
+    VkShaderModule fragShaderModule = <span class="hljs-built_in">createShaderModule</span>(fragShaderCode);
+    <span class="hljs-comment">// Assign shader modules to stages within the pipeline</span>
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.<span class="hljs-keyword">module</span> = vertShaderModule;
+    vertShaderStageInfo.pName = <span class="hljs-string">&quot;main&quot;</span>;
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.<span class="hljs-keyword">module</span> = fragShaderModule;
+    fragShaderStageInfo.pName = <span class="hljs-string">&quot;main&quot;</span>;
+    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+    <span class="hljs-comment">// Format of vertex data</span>
+    <span class="hljs-comment">// Currently no data, because we hard code the data in the shader</span>
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = <span class="hljs-number">0</span>;
+    vertexInputInfo.vertexAttributeDescriptionCount = <span class="hljs-number">0</span>;
+
+    <span class="hljs-comment">// Input Assembly</span>
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    <span class="hljs-comment">// The geometries to draw are triangles</span>
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    <span class="hljs-comment">// Disable primitive restart</span>
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    <span class="hljs-comment">// We use dynamic state for viewport, so no actual pViewports here</span>
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = <span class="hljs-number">1</span>;
+    viewportState.scissorCount = <span class="hljs-number">1</span>;
+
+    <span class="hljs-comment">// Rasterizer: Convert geometry to fragments</span>
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    <span class="hljs-comment">// Clamp fragments beyond near/far planes to them</span>
+    rasterizer.depthClampEnable = VK_FALSE;
+    <span class="hljs-comment">// Discard geometries so that they never pass rasterizer</span>
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    <span class="hljs-comment">// Fill the area of polygon. </span>
+    <span class="hljs-comment">// Other options include fill edges or vertices only.</span>
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    <span class="hljs-comment">// Linewidth set to 1 pixel</span>
+    rasterizer.lineWidth = <span class="hljs-number">1.0f</span>;
+    <span class="hljs-comment">// Cull backfaces</span>
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    <span class="hljs-comment">// Define front faces: those with clockwise vertex order</span>
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    <span class="hljs-comment">// Multisampling</span>
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    <span class="hljs-comment">// How the new color in the framebuffer is blended with the old </span>
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.logicOp = VK_LOGIC_OP_COPY;
+    colorBlending.attachmentCount = <span class="hljs-number">1</span>;
+    colorBlending.pAttachments = &amp;colorBlendAttachment;
+    colorBlending.blendConstants[<span class="hljs-number">0</span>] = <span class="hljs-number">0.0f</span>;
+    colorBlending.blendConstants[<span class="hljs-number">1</span>] = <span class="hljs-number">0.0f</span>;
+    colorBlending.blendConstants[<span class="hljs-number">2</span>] = <span class="hljs-number">0.0f</span>;
+    colorBlending.blendConstants[<span class="hljs-number">3</span>] = <span class="hljs-number">0.0f</span>;
+
+
+    std::vector&lt;VkDynamicState&gt; dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = <span class="hljs-built_in">static_cast</span>&lt;<span class="hljs-type">uint32_t</span>&gt;(dynamicStates.<span class="hljs-built_in">size</span>());
+    dynamicState.pDynamicStates = dynamicStates.<span class="hljs-built_in">data</span>();
+
+    <span class="hljs-comment">// Specify uniform values and push constants</span>
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = <span class="hljs-number">0</span>;
+    pipelineLayoutInfo.pushConstantRangeCount = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreatePipelineLayout</span>(device, &amp;pipelineLayoutInfo, <span class="hljs-literal">nullptr</span>, &amp;pipelineLayout) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create pipeline layout!&quot;</span>);
+    }
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = <span class="hljs-number">2</span>;
+    pipelineInfo.pStages = shaderStages;
+
+    pipelineInfo.pVertexInputState = &amp;vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &amp;inputAssembly;
+    pipelineInfo.pViewportState = &amp;viewportState;
+    pipelineInfo.pRasterizationState = &amp;rasterizer;
+    pipelineInfo.pMultisampleState = &amp;multisampling;
+    pipelineInfo.pDepthStencilState = <span class="hljs-literal">nullptr</span>; <span class="hljs-comment">// Optional</span>
+    pipelineInfo.pColorBlendState = &amp;colorBlending;
+    pipelineInfo.pDynamicState = &amp;dynamicState;
+
+    pipelineInfo.layout = pipelineLayout;
+
+    pipelineInfo.renderPass = renderPass;
+    <span class="hljs-comment">// Index of subpass to use</span>
+    pipelineInfo.subpass = <span class="hljs-number">0</span>;
+
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; <span class="hljs-comment">// Optional</span>
+    pipelineInfo.basePipelineIndex = <span class="hljs-number">-1</span>; <span class="hljs-comment">// Optional</span>
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreateGraphicsPipelines</span>(device, VK_NULL_HANDLE, <span class="hljs-number">1</span>, &amp;pipelineInfo, <span class="hljs-literal">nullptr</span>, &amp;graphicsPipeline) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create graphics pipeline!&quot;</span>);
+    }
+
+    <span class="hljs-built_in">vkDestroyShaderModule</span>(device, fragShaderModule, <span class="hljs-literal">nullptr</span>);
+    <span class="hljs-built_in">vkDestroyShaderModule</span>(device, vertShaderModule, <span class="hljs-literal">nullptr</span>);
+}
+</code></pre>
+</details>
+<h2 id="drawing">Drawing</h2>
+<details>
+    <Summary>Command Buffer</Summary>
+<h3 id="command-buffer">Command Buffer</h3>
+<p>Command Pool: memory where command buffers are allocated from</p>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createCommandPool</span><span class="hljs-params">()</span> </span>{
+    QueueFamilyIndices queueFamilyIndices = <span class="hljs-built_in">findQueueFamilies</span>(physicalDevice);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    <span class="hljs-comment">// Allow command buffers to be rerecorded individually, </span>
+    <span class="hljs-comment">// without this flag they all have to be reset together.</span>
+    <span class="hljs-comment">// Reset happens implicitly when calling vkBeginCommandBuffer.</span>
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    <span class="hljs-comment">// Submit commands to graphics queue</span>
+    poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.<span class="hljs-built_in">value</span>();
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreateCommandPool</span>(device, &amp;poolInfo, <span class="hljs-literal">nullptr</span>, &amp;commandPool) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create command pool!&quot;</span>);
+    }
+}
+</code></pre>
+<p>Command buffer: Commands like drawing and memory transfer operations are submitted together in command buffer objects.</p>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createCommandBuffer</span><span class="hljs-params">()</span> </span>{
+    commandBuffers.<span class="hljs-built_in">resize</span>(MAX_FRAMES_IN_FLIGHT);
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool;
+    <span class="hljs-comment">// Primary: Can be submitted for execution, but cannot be called from other command buffers</span>
+    <span class="hljs-comment">// Secondary: cannot be submitted, but can be called from primary command buffers</span>
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = (<span class="hljs-type">uint32_t</span>)commandBuffers.<span class="hljs-built_in">size</span>();
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkAllocateCommandBuffers</span>(device, &amp;allocInfo, commandBuffers.<span class="hljs-built_in">data</span>()) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to allocate command buffers!&quot;</span>);
+    }
+}
+</code></pre>
+<p>Start recording a command buffer:</p>
+<pre><code class="language-Cpp"><span class="hljs-comment">// Submit the command to draw a triangle on the framebuffer to the command buffer</span>
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::recordCommandBuffer</span><span class="hljs-params">(VkCommandBuffer commandBuffer, <span class="hljs-type">uint32_t</span> imageIndex)</span> </span>{
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = <span class="hljs-number">0</span>; <span class="hljs-comment">// Optional</span>
+    <span class="hljs-comment">// for secondary command buffers</span>
+    beginInfo.pInheritanceInfo = <span class="hljs-literal">nullptr</span>; <span class="hljs-comment">// Optional</span>
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkBeginCommandBuffer</span>(commandBuffer, &amp;beginInfo) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to begin recording command buffer!&quot;</span>);
+    }
+
+    <span class="hljs-comment">// Begin render pass</span>
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    <span class="hljs-comment">// This is where the renderpass bound to the real image view through frame buffer</span>
+    renderPassInfo.renderPass = renderPass;
+    renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+
+    renderPassInfo.renderArea.offset = { <span class="hljs-number">0</span>, <span class="hljs-number">0</span> };
+    renderPassInfo.renderArea.extent = swapChainExtent;
+
+    VkClearValue clearColor = { {{<span class="hljs-number">0.0f</span>, <span class="hljs-number">0.0f</span>, <span class="hljs-number">0.0f</span>, <span class="hljs-number">1.0f</span>}} };
+    renderPassInfo.clearValueCount = <span class="hljs-number">1</span>;
+    renderPassInfo.pClearValues = &amp;clearColor;
+
+    <span class="hljs-built_in">vkCmdBeginRenderPass</span>(commandBuffer, &amp;renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    <span class="hljs-built_in">vkCmdBindPipeline</span>(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+    <span class="hljs-comment">// Set dynamic states in the pipeline</span>
+    VkViewport viewport{};
+    viewport.x = <span class="hljs-number">0.0f</span>;
+    viewport.y = <span class="hljs-number">0.0f</span>;
+    viewport.width = <span class="hljs-built_in">static_cast</span>&lt;<span class="hljs-type">float</span>&gt;(swapChainExtent.width);
+    viewport.height = <span class="hljs-built_in">static_cast</span>&lt;<span class="hljs-type">float</span>&gt;(swapChainExtent.height);
+    viewport.minDepth = <span class="hljs-number">0.0f</span>;
+    viewport.maxDepth = <span class="hljs-number">1.0f</span>;
+    <span class="hljs-built_in">vkCmdSetViewport</span>(commandBuffer, <span class="hljs-number">0</span>, <span class="hljs-number">1</span>, &amp;viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { <span class="hljs-number">0</span>, <span class="hljs-number">0</span> };
+    scissor.extent = swapChainExtent;
+    <span class="hljs-built_in">vkCmdSetScissor</span>(commandBuffer, <span class="hljs-number">0</span>, <span class="hljs-number">1</span>, &amp;scissor);
+
+    <span class="hljs-comment">// Draw command for a triangle</span>
+    <span class="hljs-comment">// 3 vertices, 1 for not using instanced rendering, </span>
+    <span class="hljs-comment">// 0 as the offset into vertex buffer</span>
+    <span class="hljs-built_in">vkCmdDraw</span>(commandBuffer, <span class="hljs-number">3</span>, <span class="hljs-number">1</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
+
+    <span class="hljs-built_in">vkCmdEndRenderPass</span>(commandBuffer);
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkEndCommandBuffer</span>(commandBuffer) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to record command buffer!&quot;</span>);
+    }
+}
+</code></pre>
+</details>
+<details>
+    <Summary>Draw frame</Summary>
+<h3 id="draw-frame">Draw Frame</h3>
+<ol>
+<li>Wait for the previous frame to finish</li>
+<li>Acquire an image from the swap chain</li>
+<li>Record a command buffer which draws the scene onto that image</li>
+<li>Submit the recorded command buffer</li>
+<li>Present the swap chain image</li>
+</ol>
+<h4 id="synchronization">Synchronization</h4>
+<p>Semaphore: A semaphore will be signaled when one operation finishes executing, and reset back when another operations starts. It is used for ordering the execution on the GPU.
+Fence: for CPU.</p>
+<pre><code class="language-Cpp"><span class="hljs-comment">// Semaphore</span>
+VkCommandBuffer A, B = ... <span class="hljs-comment">// record command buffers</span>
+VkSemaphore S = ... <span class="hljs-comment">// create a semaphore</span>
+
+<span class="hljs-comment">// enqueue A, signal S when done - starts executing immediately</span>
+<span class="hljs-built_in">vkQueueSubmit</span>(work: A, signal: S, wait: None)
+
+<span class="hljs-comment">// enqueue B, wait on S to start</span>
+<span class="hljs-built_in">vkQueueSubmit</span>(work: B, signal: None, wait: S)
+
+<span class="hljs-comment">// Fence</span>
+VkCommandBuffer A = ... <span class="hljs-comment">// record command buffer with the transfer</span>
+VkFence F = ... <span class="hljs-comment">// create the fence</span>
+
+<span class="hljs-comment">// enqueue A, start work immediately, signal F when done</span>
+<span class="hljs-built_in">vkQueueSubmit</span>(work: A, fence: F)
+
+<span class="hljs-built_in">vkWaitForFence</span>(F) <span class="hljs-comment">// blocks execution until A has finished executing</span>
+
+<span class="hljs-built_in">save_screenshot_to_disk</span>() <span class="hljs-comment">// can&#x27;t run until the transfer has finished</span>
+</code></pre>
+<details><Summary>Create sync objects</Summary>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createSyncObjects</span><span class="hljs-params">()</span> </span>{
+    imageAvailableSemaphores.<span class="hljs-built_in">resize</span>(MAX_FRAMES_IN_FLIGHT);
+    renderFinishedSemaphores.<span class="hljs-built_in">resize</span>(MAX_FRAMES_IN_FLIGHT);
+    inFlightFences.<span class="hljs-built_in">resize</span>(MAX_FRAMES_IN_FLIGHT);
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; MAX_FRAMES_IN_FLIGHT; i++) {
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreateSemaphore</span>(device, &amp;semaphoreInfo, <span class="hljs-literal">nullptr</span>, &amp;imageAvailableSemaphores[i]) != VK_SUCCESS ||
+            <span class="hljs-built_in">vkCreateSemaphore</span>(device, &amp;semaphoreInfo, <span class="hljs-literal">nullptr</span>, &amp;renderFinishedSemaphores[i]) != VK_SUCCESS ||
+            <span class="hljs-built_in">vkCreateFence</span>(device, &amp;fenceInfo, <span class="hljs-literal">nullptr</span>, &amp;inFlightFences[i]) != VK_SUCCESS) {
+
+            <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create synchronization objects for a frame!&quot;</span>);
+        }
+    }
+}
+</code></pre>
+</details>
+<h3 id="draw-frame-process">Draw Frame Process</h3>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::drawFrame</span><span class="hljs-params">()</span> </span>{
+    <span class="hljs-comment">// Wait for the previous frame</span>
+    <span class="hljs-comment">// VK_TRUE: wait for all fences (to become signaled) in the array</span>
+    <span class="hljs-comment">// UINT64_MAX: disable timeout</span>
+    <span class="hljs-built_in">vkWaitForFences</span>(device, <span class="hljs-number">1</span>, &amp;inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+
+    <span class="hljs-type">uint32_t</span> imageIndex;
+    <span class="hljs-comment">// The image is not available until the presentation system finishes using it</span>
+    VkResult result = <span class="hljs-built_in">vkAcquireNextImageKHR</span>(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &amp;imageIndex);
+
+    <span class="hljs-keyword">if</span> (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        <span class="hljs-built_in">recreateSwapChain</span>();
+        <span class="hljs-keyword">return</span>;
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (result != VK_SUCCESS &amp;&amp; result != VK_SUBOPTIMAL_KHR) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to acquire swap chain image!&quot;</span>);
+    }
+
+    <span class="hljs-comment">// Set fence to unsignaled</span>
+    <span class="hljs-comment">// Must delay this to be after recreateSwapChain to avoid deadlock</span>
+    <span class="hljs-built_in">vkResetFences</span>(device, <span class="hljs-number">1</span>, &amp;inFlightFences[currentFrame]);
+
+    <span class="hljs-comment">// Reset current frame&#x27;s command buffer and record commands to render the current frame</span>
+    <span class="hljs-built_in">vkResetCommandBuffer</span>(commandBuffers[currentFrame], <span class="hljs-number">0</span>);
+    <span class="hljs-built_in">recordCommandBuffer</span>(commandBuffers[currentFrame], imageIndex);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    <span class="hljs-comment">// Which semaphores to wait</span>
+    <span class="hljs-comment">// This semaphore will not be available until the frame has finished presentation</span>
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+    <span class="hljs-comment">// On which stage to wait</span>
+    <span class="hljs-comment">// Here we want to wait with writing colors to the image until it&#x27;s available</span>
+    <span class="hljs-comment">// We should not write anything to the frame if it is being presented</span>
+    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+    submitInfo.waitSemaphoreCount = <span class="hljs-number">1</span>;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+
+    submitInfo.commandBufferCount = <span class="hljs-number">1</span>;
+    submitInfo.pCommandBuffers = &amp;commandBuffers[currentFrame];
+
+    <span class="hljs-comment">// Which semaphores to signal once the command buffer(s) has finished execution</span>
+    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+    submitInfo.signalSemaphoreCount = <span class="hljs-number">1</span>;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    <span class="hljs-comment">// Next render commands on this frame buffer has to wait until the current finishes</span>
+    <span class="hljs-comment">// Note that both signalSemaphores and inFlightFences will be signaled once this finishes execution</span>
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkQueueSubmit</span>(graphicsQueue, <span class="hljs-number">1</span>, &amp;submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to submit draw command buffer!&quot;</span>);
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+    <span class="hljs-comment">// Don&#x27;t present before rendering is completed</span>
+    presentInfo.waitSemaphoreCount = <span class="hljs-number">1</span>;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+
+    VkSwapchainKHR swapChains[] = { swapChain };
+    presentInfo.swapchainCount = <span class="hljs-number">1</span>;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &amp;imageIndex;
+
+    presentInfo.pResults = <span class="hljs-literal">nullptr</span>; <span class="hljs-comment">// Optional</span>
+
+    result = <span class="hljs-built_in">vkQueuePresentKHR</span>(presentQueue, &amp;presentInfo);
+    <span class="hljs-keyword">if</span> (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+        framebufferResized = <span class="hljs-literal">false</span>;
+        <span class="hljs-built_in">recreateSwapChain</span>();
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (result != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to present swap chain image!&quot;</span>);
+    }
+    currentFrame = (currentFrame + <span class="hljs-number">1</span>) % MAX_FRAMES_IN_FLIGHT;
+}
+</code></pre>
+</details>
+<h2 id="pass-data-to-shader">Pass data to shader</h2>
+<details>
+    <Summary>Vertex Shader Input</Summary>
+<pre><code class="language-Cpp"><span class="hljs-meta">#version 450</span>
+
+<span class="hljs-built_in">layout</span>(binding = <span class="hljs-number">0</span>) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+} ubo;
+
+<span class="hljs-built_in">layout</span>(location = <span class="hljs-number">0</span>) in vec2 inPosition;
+<span class="hljs-built_in">layout</span>(location = <span class="hljs-number">1</span>) in vec3 inColor;
+
+<span class="hljs-built_in">layout</span>(location = <span class="hljs-number">0</span>) out vec3 fragColor;
+
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">main</span><span class="hljs-params">()</span> </span>{
+    gl_Position = ubo.proj * ubo.view * ubo.model * <span class="hljs-built_in">vec4</span>(inPosition, <span class="hljs-number">0.0</span>, <span class="hljs-number">1.0</span>);
+    fragColor = inColor;
+}
+</code></pre>
+</details>
+<details>
+    <Summary>Create Buffer</Summary>
+<h3 id="create-a-buffer-to-store-data">Create a buffer to store data</h3>
+<ol>
+<li>Create Buffer</li>
+<li>Allocate memory (from the GPU memory) for the buffer</li>
+<li>Bind the buffer with the memory</li>
+</ol>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createBuffer</span><span class="hljs-params">(VkDeviceSize size, VkBufferUsageFlags usage, 
+    VkMemoryPropertyFlags properties, VkBuffer&amp; buffer, VkDeviceMemory&amp; bufferMemory)</span> </span>{
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkCreateBuffer</span>(device, &amp;bufferInfo, <span class="hljs-literal">nullptr</span>, &amp;buffer) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to create buffer!&quot;</span>);
+    }
+
+    VkMemoryRequirements memRequirements;
+    <span class="hljs-built_in">vkGetBufferMemoryRequirements</span>(device, buffer, &amp;memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = <span class="hljs-built_in">findMemoryType</span>(memRequirements.memoryTypeBits, properties);
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-built_in">vkAllocateMemory</span>(device, &amp;allocInfo, <span class="hljs-literal">nullptr</span>, &amp;bufferMemory) != VK_SUCCESS) {
+        <span class="hljs-keyword">throw</span> std::<span class="hljs-built_in">runtime_error</span>(<span class="hljs-string">&quot;failed to allocate buffer memory!&quot;</span>);
+    }
+
+    <span class="hljs-built_in">vkBindBufferMemory</span>(device, buffer, bufferMemory, <span class="hljs-number">0</span>);
+}
+</code></pre>
+</details>
+<details>
+    <Summary>Vertex Buffer</Summary>
+<h3 id="vertex-buffer">Vertex Buffer</h3>
+<p>Describe vertex data format:</p>
+<pre><code class="language-Cpp"><span class="hljs-keyword">struct</span> <span class="hljs-title class_">Vertex</span> {
+    glm::vec2 pos;
+    glm::vec3 color;
+
+    <span class="hljs-function"><span class="hljs-type">static</span> VkVertexInputBindingDescription <span class="hljs-title">getBindingDescription</span><span class="hljs-params">()</span> </span>{
+        VkVertexInputBindingDescription bindingDescription{};
+        <span class="hljs-comment">// binding number: the index of the binding in the array of bindings</span>
+        bindingDescription.binding = <span class="hljs-number">0</span>;
+        bindingDescription.stride = <span class="hljs-built_in">sizeof</span>(Vertex);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        <span class="hljs-keyword">return</span> bindingDescription;
+    }
+
+    <span class="hljs-comment">// How to extract a vertex attribute from a chunk of vertex data </span>
+    <span class="hljs-comment">// originating from a binding description</span>
+    <span class="hljs-function"><span class="hljs-type">static</span> std::array&lt;VkVertexInputAttributeDescription, 2&gt; <span class="hljs-title">getAttributeDescriptions</span><span class="hljs-params">()</span> </span>{
+        std::array&lt;VkVertexInputAttributeDescription, 2&gt; attributeDescriptions{};
+        <span class="hljs-comment">// shader input location number for this attribute</span>
+        attributeDescriptions[<span class="hljs-number">0</span>].location = <span class="hljs-number">0</span>;
+        attributeDescriptions[<span class="hljs-number">0</span>].format = VK_FORMAT_R32G32_SFLOAT;
+        <span class="hljs-comment">// the binding number which this attribute takes its data from</span>
+        attributeDescriptions[<span class="hljs-number">0</span>].binding = <span class="hljs-number">0</span>;
+        <span class="hljs-comment">// byte offset of this attribute relative to the start of an element in the vertex input binding</span>
+        attributeDescriptions[<span class="hljs-number">0</span>].offset = <span class="hljs-built_in">offsetof</span>(Vertex, pos);
+
+        attributeDescriptions[<span class="hljs-number">1</span>].binding = <span class="hljs-number">0</span>;
+        attributeDescriptions[<span class="hljs-number">1</span>].location = <span class="hljs-number">1</span>;
+        attributeDescriptions[<span class="hljs-number">1</span>].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[<span class="hljs-number">1</span>].offset = <span class="hljs-built_in">offsetof</span>(Vertex, color);
+
+        <span class="hljs-keyword">return</span> attributeDescriptions;
+    }
+};
+</code></pre>
+<p>when creating graphics pipeline:</p>
+<pre><code class="language-Cpp"><span class="hljs-keyword">auto</span> bindingDescription = Vertex::<span class="hljs-built_in">getBindingDescription</span>();
+<span class="hljs-keyword">auto</span> attributeDescriptions = Vertex::<span class="hljs-built_in">getAttributeDescriptions</span>();
+
+vertexInputInfo.vertexBindingDescriptionCount = <span class="hljs-number">1</span>;
+vertexInputInfo.vertexAttributeDescriptionCount = <span class="hljs-built_in">static_cast</span>&lt;<span class="hljs-type">uint32_t</span>&gt;(attributeDescriptions.<span class="hljs-built_in">size</span>());
+vertexInputInfo.pVertexBindingDescriptions = &amp;bindingDescription;
+vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.<span class="hljs-built_in">data</span>();
+</code></pre>
+<p>Create the vertex buffer:</p>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createVertexBuffer</span><span class="hljs-params">()</span> </span>{
+    VkDeviceSize bufferSize = <span class="hljs-built_in">sizeof</span>(vertices[<span class="hljs-number">0</span>]) * vertices.<span class="hljs-built_in">size</span>();
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    <span class="hljs-comment">// Buffer used as source of transfer</span>
+    <span class="hljs-built_in">createBuffer</span>(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+        stagingBuffer, stagingBufferMemory);
+
+    <span class="hljs-type">void</span>* data;
+    <span class="hljs-built_in">vkMapMemory</span>(device, stagingBufferMemory, <span class="hljs-number">0</span>, bufferSize, <span class="hljs-number">0</span>, &amp;data);
+    <span class="hljs-built_in">memcpy</span>(data, vertices.<span class="hljs-built_in">data</span>(), (<span class="hljs-type">size_t</span>)bufferSize);
+    <span class="hljs-built_in">vkUnmapMemory</span>(device, stagingBufferMemory);
+    <span class="hljs-comment">// created on device local, cannot directly map memory to it</span>
+    <span class="hljs-comment">// can be used as the destination of transfer</span>
+    <span class="hljs-built_in">createBuffer</span>(bufferSize, 
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
+    <span class="hljs-built_in">copyBuffer</span>(stagingBuffer, vertexBuffer, bufferSize);
+
+    <span class="hljs-built_in">vkDestroyBuffer</span>(device, stagingBuffer, <span class="hljs-literal">nullptr</span>);
+    <span class="hljs-built_in">vkFreeMemory</span>(device, stagingBufferMemory, <span class="hljs-literal">nullptr</span>);
+}
+</code></pre>
+<p>Copy buffer (submitted to a temporary command buffer):</p>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::copyBuffer</span><span class="hljs-params">(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)</span> </span>{
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = commandPool;
+    allocInfo.commandBufferCount = <span class="hljs-number">1</span>;
+
+    VkCommandBuffer commandBuffer;
+    <span class="hljs-built_in">vkAllocateCommandBuffers</span>(device, &amp;allocInfo, &amp;commandBuffer);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    <span class="hljs-built_in">vkBeginCommandBuffer</span>(commandBuffer, &amp;beginInfo);
+
+    VkBufferCopy copyRegion{};
+    copyRegion.srcOffset = <span class="hljs-number">0</span>; <span class="hljs-comment">// Optional</span>
+    copyRegion.dstOffset = <span class="hljs-number">0</span>; <span class="hljs-comment">// Optional</span>
+    copyRegion.size = size;
+    <span class="hljs-built_in">vkCmdCopyBuffer</span>(commandBuffer, srcBuffer, dstBuffer, <span class="hljs-number">1</span>, &amp;copyRegion);
+    <span class="hljs-built_in">vkEndCommandBuffer</span>(commandBuffer);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = <span class="hljs-number">1</span>;
+    submitInfo.pCommandBuffers = &amp;commandBuffer;
+
+    <span class="hljs-built_in">vkQueueSubmit</span>(graphicsQueue, <span class="hljs-number">1</span>, &amp;submitInfo, VK_NULL_HANDLE);
+    <span class="hljs-built_in">vkQueueWaitIdle</span>(graphicsQueue);
+
+    <span class="hljs-built_in">vkFreeCommandBuffers</span>(device, commandPool, <span class="hljs-number">1</span>, &amp;commandBuffer);
+}
+</code></pre>
+</details>
+<details>
+    <Summary>Index Buffer</Summary>
+<h3 id="index-buffer">Index Buffer</h3>
+<pre><code class="language-Cpp"><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Application::createIndexBuffer</span><span class="hljs-params">()</span> </span>{
+    VkDeviceSize bufferSize = <span class="hljs-built_in">sizeof</span>(indices[<span class="hljs-number">0</span>]) * indices.<span class="hljs-built_in">size</span>();
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    <span class="hljs-built_in">createBuffer</span>(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+    <span class="hljs-type">void</span>* data;
+    <span class="hljs-built_in">vkMapMemory</span>(device, stagingBufferMemory, <span class="hljs-number">0</span>, bufferSize, <span class="hljs-number">0</span>, &amp;data);
+    <span class="hljs-built_in">memcpy</span>(data, indices.<span class="hljs-built_in">data</span>(), (<span class="hljs-type">size_t</span>)bufferSize);
+    <span class="hljs-built_in">vkUnmapMemory</span>(device, stagingBufferMemory);
+
+    <span class="hljs-built_in">createBuffer</span>(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
+
+    <span class="hljs-built_in">copyBuffer</span>(stagingBuffer, indexBuffer, bufferSize);
+
+    <span class="hljs-built_in">vkDestroyBuffer</span>(device, stagingBuffer, <span class="hljs-literal">nullptr</span>);
+    <span class="hljs-built_in">vkFreeMemory</span>(device, stagingBufferMemory, <span class="hljs-literal">nullptr</span>);
+}
+</code></pre>
+</details>
+<details>
+    <Summary>Bind and draw</Summary>
+<h3 id="bind-buffers-and-draw">Bind buffers and draw</h3>
+<p>In recordCommandBuffer:</p>
+<pre><code class="language-Cpp"><span class="hljs-built_in">vkCmdBindVertexBuffers</span>(commandBuffer, <span class="hljs-number">0</span>, <span class="hljs-number">1</span>, vertexBuffers, offsets);
+<span class="hljs-built_in">vkCmdBindIndexBuffer</span>(commandBuffer, indexBuffer, <span class="hljs-number">0</span>, VK_INDEX_TYPE_UINT16);
+<span class="hljs-built_in">vkCmdDrawIndexed</span>(commandBuffer, <span class="hljs-built_in">static_cast</span>&lt;<span class="hljs-type">uint32_t</span>&gt;(indices.<span class="hljs-built_in">size</span>()), <span class="hljs-number">1</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
+</code></pre>
+</details>
+        
+        
+    </body>
+    </html>
