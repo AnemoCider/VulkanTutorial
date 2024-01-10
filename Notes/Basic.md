@@ -1303,51 +1303,6 @@ void Application::transitionImageLayout(VkImage image, VkFormat format, VkImageL
     endSingleTimeCommands(commandBuffer);
 }
 ```
-
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
-</details>
-
-<details>
-    <Summary>Pipeline barrier</Summary>
-
-<a href = "https://www.khronos.org/blog/understanding-vulkan-synchronization">Blog on Vulkan Sync</a>
-
-### Pipeline Barriers
-
-Pipeline barriers can be used for synchronization within command queues. They specify what data or which stages of the rendering pipeline to wait for and which stages to block until other specified stages in previous commands are completed.
-
-```Cpp
-void vkCmdPipelineBarrier(
-   VkCommandBuffer                             commandBuffer,
-   VkPipelineStageFlags                        srcStageMask,
-   VkPipelineStageFlags                        dstStageMask,
-   VkDependencyFlags                           dependencyFlags,
-   uint32_t                                    memoryBarrierCount,
-   const VkMemoryBarrier*                      pMemoryBarriers,
-   uint32_t                                    bufferMemoryBarrierCount,
-   const VkBufferMemoryBarrier*                pBufferMemoryBarriers,
-   uint32_t                                    imageMemoryBarrierCount,
-   const VkImageMemoryBarrier*                 pImageMemoryBarriers);
-```
-
-#### Execution barriers
-
-> When we want to control the flow of commands and enforce the order of execution using pipeline barriers, we can insert a barrier between the Vulkan action commands and specify the prerequisite pipeline stages during which previous commands need to finish before continuing ahead. We can also specify the pipeline stages that should be on hold until after this barrier.
-
-srcStageMask: marks the stages to wait for in previous commands before allowing the stages given in dstStageMask to execute in subsequent commands.
-
-dstStageMask: stages that will not start until the stages in srcStageMask (and earlier) complete.
-
-#### Memory Barriers
-
-Vulkan uses caches, so the data may not have been written from cache to the RAM when we attempt to read it. 
-> Memory barriers are the tools we can use to ensure that caches are flushed and our memory writes from commands executed before the barrier are available to the pending after-barrier commands. They are also the tool we can use to invalidate caches so that the latest data is visible to the cores that will execute after-barrier commands.
-> memory barriers specify both the type of memory accesses to wait for, and the types of accesses that are blocked at the specified pipeline stages. Each memory barrier contains a source access mask (srcAccessMask) and a destination access mask (dstAccessMask) to specify that the source accesses (typically writes) by the source stages in previous commands are available and visible to the destination accesses by the destination stages in subsequent commands.
-> Global memory barriers are added via the pMemoryBarriers parameter and apply to all memory objects. Buffer memory barriers are added via the pBufferMemoryBarriers parameter and only apply to device memory bound to VkBuffer objects. Image memory barriers are added via the pImageMemoryBarriers parameter and only apply to device memory bound to VkImage objects.
-
 </details>
 
 <details>
@@ -1403,6 +1358,5 @@ typedef struct VkImageMemoryBarrier {
 > Memory barriers are the tools we can use to ensure that caches are flushed and our memory writes from commands executed before the barrier are available to the pending after-barrier commands. They are also the tool we can use to invalidate caches so that the latest data is visible to the cores that will execute after-barrier commands.
 > memory barriers specify both the type of memory accesses to wait for, and the types of accesses that are blocked at the specified pipeline stages. Each memory barrier contains a source access mask (srcAccessMask) and a destination access mask (dstAccessMask) to specify that the source accesses (typically writes) by the source stages in previous commands are available and visible to the destination accesses by the destination stages in subsequent commands.
 > Global memory barriers are added via the pMemoryBarriers parameter and apply to all memory objects. Buffer memory barriers are added via the pBufferMemoryBarriers parameter and only apply to device memory bound to VkBuffer objects. Image memory barriers are added via the pImageMemoryBarriers parameter and only apply to device memory bound to VkImage objects.
-
 
 </details>
