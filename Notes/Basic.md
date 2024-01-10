@@ -1356,7 +1356,9 @@ typedef struct VkImageMemoryBarrier {
 ```
 
 > Memory barriers are the tools we can use to ensure that caches are flushed and our memory writes from commands executed before the barrier are available to the pending after-barrier commands. They are also the tool we can use to invalidate caches so that the latest data is visible to the cores that will execute after-barrier commands.
+>
 > memory barriers specify both the type of memory accesses to wait for, and the types of accesses that are blocked at the specified pipeline stages. Each memory barrier contains a source access mask (srcAccessMask) and a destination access mask (dstAccessMask) to specify that the source accesses (typically writes) by the source stages in previous commands are available and visible to the destination accesses by the destination stages in subsequent commands.
+>
 > Global memory barriers are added via the pMemoryBarriers parameter and apply to all memory objects. Buffer memory barriers are added via the pBufferMemoryBarriers parameter and only apply to device memory bound to VkBuffer objects. Image memory barriers are added via the pImageMemoryBarriers parameter and only apply to device memory bound to VkImage objects.
 
 </details>
