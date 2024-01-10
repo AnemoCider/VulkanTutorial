@@ -1,5 +1,56 @@
 # Basic Procedure
 
+## Overview
+
+drawFrame:
+
+- global variable: index of the currentFrame
+- wait and reset fences
+- acquire next image from swapChain to draw
+  - create swapChain: REQUIRES physical device, (manually specified) required queueFamilies, surface, logical device
+- reset and record command buffer
+  - begin command buffer
+    - create command buffer: REQUIRES command pool
+  - begin render pass: REQUIRES render pass, framebuffer, swapChain
+    - create render pass: REQUIRES swapChain, attachment metadata
+  - bind pipeline
+    - create pipeline: REQUIRES fixed functions setting, render pass
+  - set dynamic states: viewport and scissors extent
+  - bind vertex and index buffers
+    - create vertex/index buffer: REQUIRES logical device
+  - bind descriptor sets: REQUIRES uniform buffers
+  - create draw commands
+- update uniform buffer
+- submit commands to graphics queue, wait & set fence and render semaphore
+- submit image to present to present queue, wait & set present semaphore
+- currentFrame++
+
+### Sync
+
+```Cpp
+imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+```
+
+swap chain: minCount + 1 images
+inFlight: 2
+
+drawFrame:
+
+- wait for inFlightFences[currentFrame]
+  - the fence will be signaled once GPU completes rendering on the current frame
+- acquire next image from the swap chain
+  - wait for the presentation system to finish using the image
+  - then signal imageAvailableSemaphores[currentFrame]
+- reset inFlightFences[currentFrame]
+- record commands
+- submit commands to graphics queue for rendering
+  - wait for imageAvailableSemaphores[currentFrame]
+  - signal renderFinishedSemaphores[currentFrame]
+- present image
+  - wait for renderFinishedSemaphores[currentFrame]
+
 ## Presentation
 
 - Window: where images will finally be presented to
@@ -970,7 +1021,12 @@ Using resource descriptors, through which shaders can freely access resources li
 - Allocate a descriptor set from a descriptor pool
 - Bind the descriptor set during rendering
 
-Analogy: descriptor layout - render pass (how to use the data), descriptor - framebuffer (where is the data), uniform buffer - images (the data)
+Objects: 
+
+- Layout binding: bound to which shader at which binding point
+- Descriptor layout: a set of bindings
+- Descriptor Set: buffer and layout. Buffer is specified in WriteDescriptorSet structure, while the layout is specified when created.
+- Descriptor Sets: usually one set for a framebuffer. Allocate the multiple sets together. There should be a equal number of layouts.
 
 <details>
     <Summary>Descriptor layout</Summary>
@@ -1138,4 +1194,114 @@ Finally, use descriptor sets when recording command buffer:
 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 ```
+</details>
+
+## Texture
+
+Adding a texture to our application will involve the following steps:
+
+- Create an image object backed by device memory
+- Fill it with pixels from an image file
+- Create an image sampler
+- Add a combined image sampler descriptor to sample colors from the texture
+
+
+<details>
+    <Summary>Create texture image</Summary>
+
+### Create texture image
+
+- Create a staging buffer
+- Copy data into the buffer
+- Copy pixels from the buffer to the image
+
+Creating a texture image:
+
+```Cpp
+void Application::createTextureImage() {
+    int texWidth, texHeight, texChannels;
+    stbi_uc* pixels = stbi_load("textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+        stagingBuffer, stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, pixels, static_cast<size_t>(imageSize));
+    vkUnmapMemory(device, stagingBufferMemory);
+
+    stbi_image_free(pixels);
+
+    createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, 
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
+    transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, 
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), 
+        static_cast<uint32_t>(texHeight));
+    transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, 
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMemory, nullptr);
+}
+```
+
+Implementation of layout transition:
+
+```Cpp
+void Application::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
+    VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    VkPipelineStageFlags sourceStage;
+    VkPipelineStageFlags destinationStage;
+
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+        // transfer writes that don't need to wait on anything
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        // shader reads should wait on transfer writes, 
+        // specifically the shader reads in the fragment shader, 
+        // because that's where we're going to use the texture
+        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        sourceStage, destinationStage,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    endSingleTimeCommands(commandBuffer);
+}
+```
+
 </details>
