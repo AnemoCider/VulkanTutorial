@@ -1201,7 +1201,7 @@ vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 
 Adding a texture to our application will involve the following steps:
 
 - Create an image object backed by device memory
-- Fill it with pixels from an image file
+- Fill it with pixels from an image file - the actual texture
 - Create an image sampler
 - Add a combined image sampler descriptor to sample colors from the texture
 
@@ -1362,3 +1362,127 @@ typedef struct VkImageMemoryBarrier {
 > Global memory barriers are added via the pMemoryBarriers parameter and apply to all memory objects. Buffer memory barriers are added via the pBufferMemoryBarriers parameter and only apply to device memory bound to VkBuffer objects. Image memory barriers are added via the pImageMemoryBarriers parameter and only apply to device memory bound to VkImage objects.
 
 </details>
+
+<details>
+    <Summary>Image Sampler</Summary>
+
+### Image Sampler
+
+#### Create an image sampler
+
+Textures are usually accessed through samplers, will apply filtering and transformations to compute the final color that is retrieved, e.g., by automatically applying anisotropic filtering, and dealing with reads outside the texture image.
+
+```Cpp
+void Application::createTextureSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR; // Deal with oversampling: # of fragments > texels
+    samplerInfo.minFilter = VK_FILTER_LINEAR; // Deal with undersampling
+    // Deal with sampling outside
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_TRUE;
+
+    // the amount of texel samples that can be used to calculate the final color
+    // limited by physical device properties.
+    // we need to enable this feature in advance
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    // Mipmap
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create texture sampler!");
+    }
+}
+```
+
+#### Pass the sampler to shader
+
+Create binding:
+
+```Cpp
+VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+samplerLayoutBinding.binding = 1;
+samplerLayoutBinding.descriptorCount = 1;
+samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+samplerLayoutBinding.pImmutableSamplers = nullptr;
+samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+```
+
+Allocate additional pools:
+
+```Cpp
+std::array<VkDescriptorPoolSize, 2> poolSizes{};
+poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+VkDescriptorPoolCreateInfo poolInfo{};
+poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+poolInfo.pPoolSizes = poolSizes.data();
+poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+```
+
+Write to the descriptor set:
+
+```Cpp
+VkDescriptorImageInfo imageInfo{};
+imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+imageInfo.imageView = textureImageView;
+imageInfo.sampler = textureSampler;
+
+descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+descriptorWrites[1].dstSet = descriptorSets[i];
+descriptorWrites[1].dstBinding = 1;
+descriptorWrites[1].dstArrayElement = 0;
+descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+descriptorWrites[1].descriptorCount = 1;
+descriptorWrites[1].pImageInfo = &imageInfo;
+```
+
+#### Use sampler in the shader
+
+```Cpp
+// In vertex struct
+glm::vec2 texCoord;
+static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions() {
+    std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+
+    ...
+
+    attributeDescriptions[2].binding = 0;
+    attributeDescriptions[2].location = 2;
+    attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+    attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
+
+    return attributeDescriptions;
+}
+```
+
+```GLSL
+// In vertex shader
+layout(location = 2) in vec2 inTexCoord;
+layout(location = 1) out vec2 fragTexCoord;
+void main() {
+    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 0.0, 1.0);
+    fragTexCoord = inTexCoord;
+}
+
+// In fragment shader
+layout(binding = 1) uniform sampler2D texSampler;
+void main() {
+    outColor = texture(texSampler, fragTexCoord);
+}
+```
